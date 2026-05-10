@@ -22,7 +22,7 @@ export function ProviderList({ title }: { title: TitleDetail }) {
             <div key={key}>
               <h3 className="mb-2 font-mono text-xs font-medium uppercase text-text-muted">{label}</h3>
               <div className="flex gap-3 overflow-x-auto pb-2">
-                {providers.map((provider) => <ProviderButton key={`${provider.id}-${provider.type}`} provider={provider} />)}
+                {providers.map((provider) => <ProviderButton key={`${provider.id}-${provider.type}`} provider={provider} title={title} />)}
               </div>
             </div>
           );
