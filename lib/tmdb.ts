@@ -218,3 +218,22 @@ export async function discover(params: { region?: "IN"; with_watch_providers?: s
     ].map(normalize).filter((item): item is NormalizedTitleResult => Boolean(item));
   });
 }
+
+export async function discoverTitles(
+  mediaType: "movie" | "tv",
+  params: Record<string, string | number | undefined>,
+  revalidate = 21600,
+) {
+  return cached(`tmdb:discover:${mediaType}:${JSON.stringify(params)}`, revalidate, async () => {
+    const data = await tmdbFetch<TmdbListResponse>(`/discover/${mediaType}`, {
+      watch_region: "IN",
+      region: "IN",
+      sort_by: "popularity.desc",
+      include_adult: "false",
+      ...params,
+    }, revalidate);
+    return data.results
+      .map((result) => normalize({ ...result, media_type: mediaType }))
+      .filter((item): item is NormalizedTitleResult => Boolean(item));
+  });
+}
