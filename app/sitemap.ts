@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { popularTitles } from "@/lib/meili";
+import { popularTitles } from "@/lib/search";
 import { titleHref } from "@/lib/slug";
 import { getSiteUrl } from "@/lib/utils";
 

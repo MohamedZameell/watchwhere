@@ -4,7 +4,7 @@ import Link from "next/link";
 import { SearchBar } from "@/components/ui/SearchBar";
 import { PosterGrid } from "@/components/title/PosterGrid";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { searchDidYouMean, searchTitles } from "@/lib/meili";
+import { searchDidYouMean, searchTitles, type SearchOptions } from "@/lib/search";
 import type { SearchHit, SearchResponse } from "@/lib/types";
 
 export const metadata: Metadata = {
@@ -21,12 +21,12 @@ type PageProps = {
   }>;
 };
 
-function makeFilter(params: Awaited<PageProps["searchParams"]>) {
-  const filters: string[] = [];
-  if (params.type && ["movie", "tv", "anime"].includes(params.type)) filters.push(`type = "${params.type}"`);
-  if (params.year && /^\d{4}$/.test(params.year)) filters.push(`year = ${params.year}`);
-  if (params.provider) filters.push(`providers_in = "${params.provider}"`);
-  return filters.length ? filters.join(" AND ") : undefined;
+function searchOpts(params: Awaited<PageProps["searchParams"]>): SearchOptions {
+  const opts: SearchOptions = { limit: 48 };
+  if (params.type === "movie" || params.type === "tv" || params.type === "anime") opts.type = params.type;
+  if (params.year && /^\d{4}$/.test(params.year)) opts.year = Number(params.year);
+  if (params.provider) opts.provider = params.provider;
+  return opts;
 }
 
 async function getResults(params: Awaited<PageProps["searchParams"]>) {
@@ -34,16 +34,10 @@ async function getResults(params: Awaited<PageProps["searchParams"]>) {
   const empty: SearchResponse = { hits: [] as SearchHit[], totalHits: 0, processingTimeMs: 0, didYouMean: null };
   if (!q) return empty;
   try {
-    const results = await searchTitles(q, {
-      filter: makeFilter(params),
-      limit: 48,
-      attributesToRetrieve: ["id", "tmdb_id", "type", "title", "year", "poster_w342", "providers_in"],
-    });
-    if (results.hits.length) return results;
-    return {
-      ...results,
-      didYouMean: await searchDidYouMean(q, { filter: makeFilter(params) }),
-    };
+    const opts = searchOpts(params);
+    const results = await searchTitles(q, opts);
+    if (results.hits.length) return { ...results, didYouMean: null };
+    return { ...results, didYouMean: await searchDidYouMean(q, opts) };
   } catch {
     return empty;
   }

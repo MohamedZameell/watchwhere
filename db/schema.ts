@@ -1,4 +1,43 @@
-import { integer, pgTable, primaryKey, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  boolean,
+  doublePrecision,
+  index,
+  integer,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
+
+export const titles = pgTable(
+  "titles",
+  {
+    id: text("id").primaryKey(),
+    tmdbId: integer("tmdb_id").notNull(),
+    type: varchar("type", { length: 8 }).notNull(),
+    title: text("title").notNull(),
+    altTitles: text("alt_titles").array().notNull().default(sql`'{}'::text[]`),
+    year: integer("year"),
+    overview: text("overview").notNull().default(""),
+    posterW342: text("poster_w342"),
+    popularity: doublePrecision("popularity").notNull().default(0),
+    providersIn: text("providers_in").array().notNull().default(sql`'{}'::text[]`),
+    genres: text("genres").array().notNull().default(sql`'{}'::text[]`),
+    isAnime: boolean("is_anime").notNull().default(false),
+    anilistId: integer("anilist_id"),
+    searchText: text("search_text").notNull().default(""),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("titles_tmdb_type_idx").on(t.tmdbId, t.type),
+    index("titles_popularity_idx").on(t.popularity),
+    index("titles_type_idx").on(t.type),
+  ],
+);
 
 export const feedback = pgTable("feedback", {
   id: uuid("id").defaultRandom().primaryKey(),

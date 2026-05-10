@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { put } from "@vercel/blob";
 import { inngest } from "@/inngest/client";
-import { popularTitles } from "@/lib/meili";
+import { popularTitles } from "@/lib/search";
 import { titleHref } from "@/lib/slug";
 import { getSiteUrl } from "@/lib/utils";
 

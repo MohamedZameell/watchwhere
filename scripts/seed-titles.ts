@@ -1,5 +1,22 @@
-import { bulkUpsert } from "@/lib/meili";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import postgres from "postgres";
+import { bulkUpsert } from "@/lib/search";
 import type { TitleDoc } from "@/lib/types";
+
+async function ensureSchema() {
+  if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL missing.");
+  const sqlPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "db", "setup.sql");
+  const sql = readFileSync(sqlPath, "utf8");
+  const client = postgres(process.env.DATABASE_URL, { prepare: false });
+  try {
+    await client.unsafe(sql);
+    console.log("Schema setup applied.");
+  } finally {
+    await client.end({ timeout: 5 });
+  }
+}
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
@@ -101,14 +118,23 @@ function url(path: string, params: Record<string, string | number | undefined> =
 }
 
 async function tmdb<T>(path: string, params: Record<string, string | number | undefined> = {}, attempt = 0): Promise<T> {
-  const response = await fetch(url(path, params), { headers: headers() });
-  if (response.status === 429 && attempt < 3) {
-    const delays = [1200, 3000, 7000];
-    await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
-    return tmdb<T>(path, params, attempt + 1);
+  const delays = [1200, 3000, 7000, 15000];
+  try {
+    const response = await fetch(url(path, params), { headers: headers() });
+    if (response.status === 429 && attempt < delays.length) {
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+      return tmdb<T>(path, params, attempt + 1);
+    }
+    if (!response.ok) throw new Error(`TMDB ${path} failed with ${response.status}`);
+    return (await response.json()) as T;
+  } catch (error) {
+    if (attempt < delays.length) {
+      console.warn(`[tmdb retry ${attempt + 1}] ${path}: ${(error as Error).message}`);
+      await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+      return tmdb<T>(path, params, attempt + 1);
+    }
+    throw error;
   }
-  if (!response.ok) throw new Error(`TMDB ${path} failed with ${response.status}`);
-  return (await response.json()) as T;
 }
 
 function providerId(name: string) {
@@ -192,12 +218,17 @@ async function main() {
     throw new Error("Set TMDB_READ_TOKEN or TMDB_API_KEY before seeding.");
   }
 
+  await ensureSchema();
+
+  const pagesPerType = Math.min(Number(process.env.SEED_PAGES_PER_TYPE) || 250, 500);
+  console.log(`Seeding up to ${pagesPerType * 2 * 20} titles (${pagesPerType} pages x 2 media types x 20 results).`);
+
   const curated = await collectCurated();
   const curatedDocs = await Promise.all(curated.map(toDoc));
   await bulkUpsert(curatedDocs);
   console.log(`Upserted curated titles: ${curatedDocs.length}`);
 
-  const titles = [...curated, ...(await collectPopular("movie", 125)), ...(await collectPopular("tv", 125))];
+  const titles = [...curated, ...(await collectPopular("movie", pagesPerType)), ...(await collectPopular("tv", pagesPerType))];
   const unique = Array.from(new Map(titles.map((title) => [`${title.media_type}-${title.id}`, title])).values());
   const docs: TitleDoc[] = [];
 

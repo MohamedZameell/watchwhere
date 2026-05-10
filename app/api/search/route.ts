@@ -1,9 +1,9 @@
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { cached } from "@/lib/redis";
-import { searchDidYouMean, searchTitles } from "@/lib/meili";
+import { searchDidYouMean, searchTitles, type SearchOptions } from "@/lib/search";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 const searchSchema = z.object({
   q: z.string().trim().max(100).default(""),
@@ -12,20 +12,12 @@ const searchSchema = z.object({
   provider: z.string().trim().max(40).optional(),
 });
 
-async function sha256(value: string) {
-  const bytes = new TextEncoder().encode(value);
-  const hash = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(hash))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function filters(input: z.infer<typeof searchSchema>) {
-  const parts: string[] = [];
-  if (input.type !== "all") parts.push(`type = "${input.type}"`);
-  if (input.year) parts.push(`year = ${input.year}`);
-  if (input.provider) parts.push(`providers_in = "${input.provider}"`);
-  return parts.length ? parts.join(" AND ") : undefined;
+function searchOpts(input: z.infer<typeof searchSchema>): SearchOptions {
+  return {
+    type: input.type === "all" ? undefined : input.type,
+    year: input.year,
+    provider: input.provider,
+  };
 }
 
 export async function GET(request: Request) {
@@ -46,21 +38,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ hits: [], totalHits: 0, processingTimeMs: 0 });
   }
 
-  const key = `search:v1:${await sha256(JSON.stringify(input))}`;
+  const key = `search:v1:${input.q}:${input.type}:${input.year ?? ""}:${input.provider ?? ""}`;
   try {
     const result = await cached(
       key,
       60,
       async () => {
-        const primary = await searchTitles(input.q, {
-          filter: filters(input),
-          limit: 24,
-          showRankingScore: true,
-        });
-        if (primary.hits.length || !input.q) return primary;
+        const opts = searchOpts(input);
+        const primary = await searchTitles(input.q, opts);
+        if (primary.hits.length) return primary;
         return {
           ...primary,
-          didYouMean: await searchDidYouMean(input.q, { filter: filters(input) }),
+          didYouMean: await searchDidYouMean(input.q, opts),
         };
       },
       { waitUntil: (promise) => after(() => promise) },
