@@ -38,6 +38,8 @@ type TmdbListResult = {
 
 type TmdbListResponse = {
   results: TmdbListResult[];
+  total_pages?: number;
+  total_results?: number;
 };
 
 type ProviderGroup = {
@@ -184,17 +186,48 @@ async function toDoc(input: TmdbListResult & { media_type: "movie" | "tv" }): Pr
   };
 }
 
-async function collectPopular(mediaType: "movie" | "tv", pages: number) {
+type Bucket = {
+  name: string;
+  mediaType: "movie" | "tv";
+  pages: number;
+  params: Record<string, string | number>;
+};
+
+const BUCKETS: Bucket[] = [
+  // Global popular as carried in India — mostly Hollywood + Bollywood
+  { name: "global movies", mediaType: "movie", pages: 250, params: { watch_region: "IN", sort_by: "popularity.desc" } },
+  { name: "global tv",     mediaType: "tv",    pages: 250, params: { watch_region: "IN", sort_by: "popularity.desc" } },
+
+  // Tamil — deep coverage (TMDB hard cap = ~500 pages = up to 10K per media type)
+  { name: "tamil movies",  mediaType: "movie", pages: 500, params: { with_original_language: "ta", sort_by: "popularity.desc" } },
+  { name: "tamil tv",      mediaType: "tv",    pages: 500, params: { with_original_language: "ta", sort_by: "popularity.desc" } },
+
+  // English — deep coverage on top of what global already pulled
+  { name: "english movies", mediaType: "movie", pages: 500, params: { with_original_language: "en", sort_by: "popularity.desc" } },
+  { name: "english tv",     mediaType: "tv",    pages: 500, params: { with_original_language: "en", sort_by: "popularity.desc" } },
+
+  // Malayalam — popular only
+  { name: "malayalam movies", mediaType: "movie", pages: 75, params: { with_original_language: "ml", sort_by: "popularity.desc" } },
+  { name: "malayalam tv",     mediaType: "tv",    pages: 25, params: { with_original_language: "ml", sort_by: "popularity.desc" } },
+
+  // Hindi — popular only (already heavily represented in global)
+  { name: "hindi movies", mediaType: "movie", pages: 75, params: { with_original_language: "hi", sort_by: "popularity.desc" } },
+  { name: "hindi tv",     mediaType: "tv",    pages: 25, params: { with_original_language: "hi", sort_by: "popularity.desc" } },
+];
+
+async function collectBucket(bucket: Bucket) {
   const results: Array<TmdbListResult & { media_type: "movie" | "tv" }> = [];
-  for (let page = 1; page <= pages; page += 1) {
-    const data = await tmdb<TmdbListResponse>(`/discover/${mediaType}`, {
+  for (let page = 1; page <= bucket.pages; page += 1) {
+    const data = await tmdb<TmdbListResponse>(`/discover/${bucket.mediaType}`, {
       page,
-      watch_region: "IN",
-      sort_by: "popularity.desc",
       include_adult: "false",
+      ...bucket.params,
     });
-    results.push(...data.results.map((result) => ({ ...result, media_type: mediaType })));
+    if (!data.results.length) break;
+    results.push(...data.results.map((result) => ({ ...result, media_type: bucket.mediaType })));
+    if (data.total_pages && page >= data.total_pages) break;
   }
+  console.log(`  ${bucket.name}: collected ${results.length} entries`);
   return results;
 }
 
@@ -220,28 +253,37 @@ async function main() {
 
   await ensureSchema();
 
-  const pagesPerType = Math.min(Number(process.env.SEED_PAGES_PER_TYPE) || 250, 500);
-  console.log(`Seeding up to ${pagesPerType * 2 * 20} titles (${pagesPerType} pages x 2 media types x 20 results).`);
+  const totalPages = BUCKETS.reduce((sum, bucket) => sum + bucket.pages, 0);
+  console.log(`Seeding from ${BUCKETS.length} buckets, up to ${totalPages * 20} entries before dedup.`);
 
   const curated = await collectCurated();
   const curatedDocs = await Promise.all(curated.map(toDoc));
   await bulkUpsert(curatedDocs);
   console.log(`Upserted curated titles: ${curatedDocs.length}`);
 
-  const titles = [...curated, ...(await collectPopular("movie", pagesPerType)), ...(await collectPopular("tv", pagesPerType))];
-  const unique = Array.from(new Map(titles.map((title) => [`${title.media_type}-${title.id}`, title])).values());
+  const collected: Array<TmdbListResult & { media_type: "movie" | "tv" }> = [...curated];
+  for (const bucket of BUCKETS) {
+    collected.push(...(await collectBucket(bucket)));
+  }
+
+  const unique = Array.from(new Map(collected.map((title) => [`${title.media_type}-${title.id}`, title])).values());
+  console.log(`Unique entries after dedup: ${unique.length}`);
   const docs: TitleDoc[] = [];
 
   for (let index = 0; index < unique.length; index += 8) {
     const chunk = unique.slice(index, index + 8);
     docs.push(...(await Promise.all(chunk.map(toDoc))));
-    console.log(`Prepared ${docs.length}/${unique.length}`);
+    if (docs.length % 200 === 0 || docs.length === unique.length) {
+      console.log(`Prepared ${docs.length}/${unique.length}`);
+    }
+    if (docs.length >= 200) {
+      await bulkUpsert(docs.splice(0, docs.length));
+    }
   }
-
-  for (let index = 0; index < docs.length; index += 500) {
-    await bulkUpsert(docs.slice(index, index + 500));
-    console.log(`Upserted ${Math.min(index + 500, docs.length)}/${docs.length}`);
+  if (docs.length) {
+    await bulkUpsert(docs);
   }
+  console.log("Seed complete.");
 }
 
 main().catch((error) => {

@@ -2,16 +2,11 @@ name: Seed titles
 
 on:
   workflow_dispatch:
-    inputs:
-      pages_per_type:
-        description: "Pages per media type (1-500). 500 = ~20K titles."
-        default: "500"
-        required: true
 
 jobs:
   seed:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -27,5 +22,4 @@ jobs:
           TMDB_READ_TOKEN: ${{ secrets.TMDB_READ_TOKEN }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          SEED_PAGES_PER_TYPE: ${{ inputs.pages_per_type }}
         run: node --import tsx scripts/seed-titles.ts
