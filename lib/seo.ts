@@ -4,7 +4,16 @@ import { getSiteUrl } from "@/lib/utils";
 function watchActions(providers: Provider[]) {
   return providers.map((provider) => ({
     "@type": "WatchAction",
-    target: provider.link,
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate: provider.link,
+      actionPlatform: [
+        "http://schema.org/DesktopWebPlatform",
+        "http://schema.org/MobileWebPlatform",
+        "http://schema.org/AndroidPlatform",
+        "http://schema.org/IOSPlatform",
+      ],
+    },
     expectsAcceptanceOf: {
       "@type": "Offer",
       category: provider.type,

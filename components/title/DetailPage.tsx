@@ -15,8 +15,12 @@ export async function DetailPage({ type, slug }: { type: TitleType; slug: string
   if (!parsed.id) notFound();
   const title = await getTitleDetail(type, parsed.id).catch(() => null);
   if (!title) notFound();
+  const isAnimeFilm =
+    type === "anime" && (!title.seasons || title.seasons.length === 0) && (title.runtime ?? 0) > 0;
   const jsonLd = [
-    type === "movie" ? movieJsonLd(title, title.providers) : tvJsonLd(title, title.providers),
+    type === "movie" || isAnimeFilm
+      ? movieJsonLd(title, title.providers)
+      : tvJsonLd(title, title.providers),
     breadcrumbJsonLd([
       { name: "Home", path: "/" },
       { name: title.title, path: `/${type}/${slug}` },
