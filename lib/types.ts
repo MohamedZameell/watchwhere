@@ -88,3 +88,29 @@ export type TmdbIndiaProviders = {
   free?: TmdbWatchProvider[];
   ads?: TmdbWatchProvider[];
 };
+
+export type TitleDetail = {
+  tmdb_id: number;
+  type: TitleType;
+  title: string;
+  original_title: string | null;
+  year: number | null;
+  runtime: number | null;
+  rating: number | null;
+  overview: string;
+  backdrop_path: string | null;
+  poster_path: string | null;
+  genres: string[];
+  cast: { id: number; name: string; character: string; profile_path: string | null }[];
+  trailer: { youtubeKey: string } | null;
+  seasons?: { number: number; episodes: number; air_date: string | null }[];
+  providers: Provider[];
+  providers_grouped: Record<"subscription" | "rent" | "buy" | "free" | "ads", Provider[]>;
+  recommendations: SearchHit[];
+  anilist?: {
+    id: number;
+    characters: unknown[];
+    relations: unknown[];
+    externalLinks: unknown[];
+  };
+};
