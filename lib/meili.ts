@@ -80,3 +80,13 @@ export async function searchDidYouMean(q: string, opts: SearchParams = {}) {
   });
   return result.hits[0] || null;
 }
+
+export async function popularTitles(limit = 1000) {
+  const index = searchClient.index<SearchHit>(TITLES_INDEX);
+  const result = await index.search("", {
+    limit,
+    sort: ["popularity:desc"],
+    attributesToRetrieve: ["id", "tmdb_id", "type", "title", "year", "poster_w342", "providers_in"],
+  });
+  return result.hits;
+}
